@@ -424,12 +424,14 @@ if (videoInput) {
   });
 }
 
-// Handler Tombol Proses
+// =============================================================
+// REVISI: HANDLER TOMBOL PROSES (Revisi Logika Fallback Link)
+// =============================================================
 if (processBtn) {
   processBtn.addEventListener('click', async () => {
     let linkVal = socialLinkInput ? socialLinkInput.value.trim() : '';
     
-    // Otomatis isi link default jika tidak ada file lokal & link kosong
+    // Gunakan fallback link jika tidak ada file lokal maupun link input
     if (!loadedFile && !linkVal) {
       linkVal = DEFAULT_YOUTUBE_LINK;
       if (socialLinkInput) socialLinkInput.value = DEFAULT_YOUTUBE_LINK;
@@ -450,9 +452,9 @@ if (processBtn) {
     let duration = 0;
     if (loadedFile) {
       duration = await getVideoDuration(loadedFile);
-    } else if (linkVal) {
+    } else {
       duration = 276; // Simulasi durasi video media sosial (4 Menit 36 Detik)
-      showStatus(`Mendeteksi metadata dari ${platform} Link...`);
+      showStatus(`Mendeteksi metadata dari ${platform || 'YouTube'} Link...`);
     }
 
     const atmVal = atmInput ? atmInput.value : '';
@@ -1115,35 +1117,23 @@ async function trimAndDownload(startSec, endSec, clipId) {
     return;
   }
 
-  // --- OPSI 1: JIKA MENGGUNAKAN LINK YOUTUBE (BACKEND RENDER) ---
+  // --- OPSI 1: JIKA MENGGUNAKAN LINK YOUTUBE ---
   if (!loadedFile) {
     const ytUrl = document.getElementById('socialLinkInput')?.value.trim();
 
     if (ytUrl) {
-      showStatus(`[1/2] Mengirim permintaan ke server Render...`);
-      const backendUrl = "https://ai-agent-project-3-h0jp.onrender.com/download";
-
-      fetch(backendUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: ytUrl, startSec: startSec, endSec: endSec })
-      })
-      .then(res => res.blob())
-      .then(blob => {
-        showStatus(`[2/2] Mengunduh Klip #${clipId}...`);
-        triggerFileDownload(blob, `Clip_${clipId}_${startSec}s-${endSec}s.mp4`, clipId);
-      })
-      .catch(err => {
-        console.error(err);
-        alert("Gagal memproses klip dari server Render!");
-      });
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(ytUrl);
+      }
+      showStatus(`Link tersalin! Membuka Cobalt untuk Klip #${clipId} (${formatTime(startSec)} - ${formatTime(endSec)})...`);
+      const cobaltUrl = `https://cobalt.tools/?u=${encodeURIComponent(ytUrl)}`;
+      window.open(cobaltUrl, '_blank');
       return;
     } else {
       alert("Silakan upload file video atau masukkan link YouTube terlebih dahulu!");
       return;
     }
   }
-
 
   // --- OPSI 2: JIKA MENGGUNAKAN FILE LOKAL (FFMPEG.WASM) ---
   const outputFilename = `Clip_${clipId}_${startSec}s-${endSec}s.mp4`;
