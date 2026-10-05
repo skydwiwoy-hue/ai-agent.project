@@ -1115,23 +1115,35 @@ async function trimAndDownload(startSec, endSec, clipId) {
     return;
   }
 
-  // --- OPSI 1: JIKA MENGGUNAKAN LINK YOUTUBE ---
+  // --- OPSI 1: JIKA MENGGUNAKAN LINK YOUTUBE (BACKEND RENDER) ---
   if (!loadedFile) {
     const ytUrl = document.getElementById('socialLinkInput')?.value.trim();
 
     if (ytUrl) {
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(ytUrl);
-      }
-      showStatus(`Link tersalin! Membuka Cobalt untuk Klip #${clipId} (${formatTime(startSec)} - ${formatTime(endSec)})...`);
-      const cobaltUrl = `https://cobalt.tools/?u=${encodeURIComponent(ytUrl)}`;
-      window.open(cobaltUrl, '_blank');
+      showStatus(`[1/2] Mengirim permintaan ke server Render...`);
+      const backendUrl = "https://ai-agent-project-3-h0jp.onrender.com/download";
+
+      fetch(backendUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: ytUrl, startSec: startSec, endSec: endSec })
+      })
+      .then(res => res.blob())
+      .then(blob => {
+        showStatus(`[2/2] Mengunduh Klip #${clipId}...`);
+        triggerFileDownload(blob, `Clip_${clipId}_${startSec}s-${endSec}s.mp4`, clipId);
+      })
+      .catch(err => {
+        console.error(err);
+        alert("Gagal memproses klip dari server Render!");
+      });
       return;
     } else {
       alert("Silakan upload file video atau masukkan link YouTube terlebih dahulu!");
       return;
     }
   }
+
 
   // --- OPSI 2: JIKA MENGGUNAKAN FILE LOKAL (FFMPEG.WASM) ---
   const outputFilename = `Clip_${clipId}_${startSec}s-${endSec}s.mp4`;
