@@ -352,9 +352,23 @@ const defaultBackupDB = {
   }
 };
 
-let dbData = null;
+// =============================================================
+// GLOBAL CONFIGURATION & STATE
+// =============================================================
+const RENDER_BACKEND_URL = "https://ai-agent-project-3-h0jp.onrender.com";
+const DEFAULT_YOUTUBE_LINK = "https://youtu.be/lplwONPDUHI?si=qLf770cIYpVwqkJI";
 
-// Load JSON lokal atau otomatis pakai backup lengkap (Support DB V3 & Fallback)
+let dbData = null;
+let loadedFile = null;
+let ffmpegInstance = null;
+let isExporting = false;
+
+// Pagination state
+let allGeneratedClips = [];
+let currentPage = 1;
+const CLIPS_PER_PAGE = 5;
+
+// Load JSON lokal atau otomatis pakai backup lengkap
 fetch('database.json')
   .then(res => {
     if (!res.ok) throw new Error("HTTP Status Error");
@@ -370,116 +384,101 @@ fetch('database.json')
   });
 
 // DOM Elements
-const videoInput = document.getElementById('videoInput');
-const hiddenVideo = document.getElementById('hiddenVideo');
-const processBtn = document.getElementById('processBtn');
-const statusBox = document.getElementById('statusBox');
-const resultsGrid = document.getElementById('resultsGrid');
-const dropzoneText = document.getElementById('dropzoneText');
-const backBtn = document.getElementById('backBtn');
+let videoInput, hiddenVideo, processBtn, statusBox, resultsGrid, dropzoneText, backBtn;
+let uploadStep, resultStep, socialLinkInput, atmInput;
 
-const uploadStep = document.getElementById('uploadStep');
-const resultStep = document.getElementById('resultStep');
+window.addEventListener('DOMContentLoaded', () => {
+  videoInput = document.getElementById('videoInput') || document.getElementById('localVideoInput') || document.querySelector('input[type="file"]');
+  hiddenVideo = document.getElementById('hiddenVideo');
+  processBtn = document.getElementById('processBtn') || document.getElementById('btnGenerate') || document.querySelector('.btn-generate');
+  statusBox = document.getElementById('statusBox') || document.getElementById('statusText');
+  resultsGrid = document.getElementById('resultsGrid') || document.getElementById('clipResultsContainer');
+  dropzoneText = document.getElementById('dropzoneText');
+  backBtn = document.getElementById('backBtn');
 
-const socialLinkInput = document.getElementById('socialLinkInput');
-const atmInput = document.getElementById('atmInput');
+  uploadStep = document.getElementById('uploadStep');
+  resultStep = document.getElementById('resultStep');
 
-let loadedFile = null;
+  socialLinkInput = document.getElementById('socialLinkInput');
+  atmInput = document.getElementById('atmInput');
 
-// Paginasi Global (5 Klip per halaman)
-let allGeneratedClips = [];
-let currentPage = 1;
-const CLIPS_PER_PAGE = 5;
+  // Event listener upload file
+  if (videoInput) {
+    videoInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        loadedFile = e.target.files[0];
+        const sizeMB = (loadedFile.size / (1024 * 1024)).toFixed(2);
+        if (dropzoneText) {
+          dropzoneText.innerText = `Terpilih: ${loadedFile.name} (${sizeMB} MB)`;
+        }
+        showStatus(`File lokal terpilih: ${loadedFile.name} (${sizeMB} MB)`);
+      }
+    });
+  }
 
-// Variable global engine FFmpeg & lock export
-let ffmpegInstance = null;
-let isExporting = false;
+  // Event listener tombol proses utama
+  if (processBtn) {
+    processBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      handleProcessVideo();
+    });
+  }
 
-// Constant Link Fallback YouTube Default
-const DEFAULT_YOUTUBE_LINK = "https://youtu.be/lplwONPDUHI?si=qLf770cIYpVwqkJI";
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      switchToView('upload');
+    });
+  }
+
+  // Ping Backend Render (Mencegah Cold Start Delay)
+  fetch(`${RENDER_BACKEND_URL}/health`, { method: 'GET', mode: 'no-cors' }).catch(() => {});
+});
 
 // =============================================================
-// DETEKSI PLATFORM MEDIA SOSIAL (Mendukung YouTube, TikTok, Instagram)
+// UTILITY FUNCTIONS
 // =============================================================
 function detectPlatform(url) {
   if (!url) return null;
   const lowerUrl = url.toLowerCase();
-  
   if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) return 'YouTube';
   if (lowerUrl.includes('tiktok.com')) return 'TikTok';
   if (lowerUrl.includes('instagram.com')) return 'Instagram';
-  
   return 'Unknown';
 }
 
-// Handler upload file
-if (videoInput) {
-  videoInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-      loadedFile = e.target.files[0];
-      if (dropzoneText) {
-        dropzoneText.innerText = `Terpilih: ${loadedFile.name} (${(loadedFile.size / (1024 * 1024)).toFixed(2)} MB)`;
-      }
-    }
-  });
+function cleanSocialUrl(url) {
+  if (!url) return '';
+  let clean = url.trim();
+  if (clean.includes('youtu.be/')) {
+    const id = clean.split('youtu.be/')[1].split('?')[0];
+    return `https://www.youtube.com/watch?v=${id}`;
+  }
+  return clean;
 }
 
-// =============================================================
-// REVISI: HANDLER TOMBOL PROSES (Revisi Logika Fallback Link)
-// =============================================================
-if (processBtn) {
-  processBtn.addEventListener('click', async () => {
-    let linkVal = socialLinkInput ? socialLinkInput.value.trim() : '';
-    
-    // Gunakan fallback link jika tidak ada file lokal maupun link input
-    if (!loadedFile && !linkVal) {
-      linkVal = DEFAULT_YOUTUBE_LINK;
-      if (socialLinkInput) socialLinkInput.value = DEFAULT_YOUTUBE_LINK;
-    }
+function formatTime(seconds) {
+  const totalSec = Math.floor(seconds);
+  const hrs = Math.floor(totalSec / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
 
-    const platform = detectPlatform(linkVal);
-
-    if (!loadedFile && linkVal && platform === 'Unknown') {
-      alert("Tautan tidak valid! Harap masukkan URL yang valid dari YouTube, TikTok, atau Instagram.");
-      return;
-    }
-
-    if (!dbData) dbData = defaultBackupDB;
-
-    switchToView('result');
-    showStatus("Membaca metadata & menganalisis konteks video/link...");
-
-    let duration = 0;
-    if (loadedFile) {
-      duration = await getVideoDuration(loadedFile);
-    } else {
-      duration = 276; // Simulasi durasi video media sosial (4 Menit 36 Detik)
-      showStatus(`Mendeteksi metadata dari ${platform || 'YouTube'} Link...`);
-    }
-
-    const atmVal = atmInput ? atmInput.value : '';
-    const detectedTarget = await detectLanguageAndRegion(loadedFile, linkVal, atmVal);
-
-    showStatus(`Target Wilayah: ${detectedTarget.region.toUpperCase()} | Bahasa: ${detectedTarget.lang.toUpperCase()} | Durasi Total: ${formatTime(duration)} (${Math.round(duration)}s)`);
-
-    const nicheEl = document.getElementById('nicheSelect');
-    const niche = nicheEl ? nicheEl.value : 'gaming';
-
-    // Build clips menggunakan Context Engine V2
-    allGeneratedClips = buildClipsEngine(duration, detectedTarget.lang, niche, detectedTarget.region, linkVal, atmVal);
-    
-    currentPage = 1;
-    renderPage(currentPage);
-  });
+  if (hrs > 0) {
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
-if (backBtn) {
-  backBtn.addEventListener('click', () => {
-    switchToView('upload');
-  });
+function showStatus(msg) {
+  if (statusBox) {
+    statusBox.style.display = 'block';
+    statusBox.innerHTML = msg;
+  } else {
+    console.log('[Status]:', msg);
+  }
 }
 
 function switchToView(viewName) {
+  if (!uploadStep || !resultStep) return;
   if (viewName === 'result') {
     uploadStep.classList.remove('active');
     uploadStep.classList.add('hidden');
@@ -494,15 +493,12 @@ function switchToView(viewName) {
   window.scrollTo(0, 0);
 }
 
-function showStatus(msg) {
-  if (statusBox) {
-    statusBox.style.display = 'block';
-    statusBox.innerText = msg;
-  }
-}
-
 function getVideoDuration(file) {
   return new Promise((resolve) => {
+    if (!hiddenVideo) {
+      resolve(300); // Fallback jika tidak ada elemen video
+      return;
+    }
     const url = URL.createObjectURL(file);
     hiddenVideo.src = url;
     hiddenVideo.onloadedmetadata = () => {
@@ -512,6 +508,9 @@ function getVideoDuration(file) {
   });
 }
 
+// =============================================================
+// DETEKSI BAHASA & REGION
+// =============================================================
 async function detectLanguageAndRegion(file, socialLink, atmRef) {
   const forceLangEl = document.getElementById('forceLang');
   const override = forceLangEl ? forceLangEl.value : 'auto';
@@ -558,23 +557,25 @@ async function detectLanguageAndRegion(file, socialLink, atmRef) {
 
     recognition.onerror = () => resolve({ lang: lang, region: region });
     
-    hiddenVideo.play().catch(() => {});
-    try { recognition.start(); } catch (e) { resolve({ lang: lang, region: region }); }
+    if (hiddenVideo) {
+      hiddenVideo.play().catch(() => {});
+      try { recognition.start(); } catch (e) { resolve({ lang: lang, region: region }); }
 
-    setTimeout(() => {
-      hiddenVideo.pause();
+      setTimeout(() => {
+        hiddenVideo.pause();
+        resolve({ lang: lang, region: region });
+      }, 4000);
+    } else {
       resolve({ lang: lang, region: region });
-    }, 4000);
+    }
   });
 }
 
 // =============================================================
-// ATM & KEYWORD EXTRACTOR (SUPPORT YOUTUBE, TIKTOK, INSTAGRAM)
+// ATM & KEYWORD EXTRACTOR
 // =============================================================
 function extractATMContext() {
-  const atmEl = document.getElementById('atmInput');
-  const atmValue = atmEl ? atmEl.value.trim() : '';
-
+  const atmValue = atmInput ? atmInput.value.trim() : '';
   if (!atmValue) return null;
 
   let cleanText = atmValue
@@ -624,21 +625,6 @@ function extractKeywordsFromInput(socialLink, fileName, niche) {
   };
 
   return dynamicNicheKeywords[niche] || ["Momen Utama", "Highlight Pilihan"];
-}
-
-// =============================================================
-// OFFLINE GENERATOR ADAPTER (100% TANPA API KEY)
-// =============================================================
-async function fetchGeminiClipContent(payload) {
-  const { niche, lang, index, extractedTopic, preset } = payload;
-  
-  return generateRealtimeClipDataV2(
-    niche || 'gaming', 
-    lang || 'id-ID', 
-    index || 1, 
-    extractedTopic || 'Highlight', 
-    preset
-  );
 }
 
 // =============================================================
@@ -696,8 +682,7 @@ function generateRealtimeClipDataV2(niche, lang, index, extractedTopic, preset, 
       `Simpan video ini sekarang agar kamu bisa menyimak ulang materinya kapan saja! 📌`,
       `Bagaimana tanggapanmu mengenai hal ini? Mari berdiskusi secara sehat di bawah! 💬`
     ];
-    const selectedCTA = indoCaptionCTAs[(index - 1) % indoCaptionCTAs.length];
-    caption = `${selectedBaseCaption} Penjelasan mengenai ${topicName} memberikan gambaran utuh tentang konteks aktual yang terjadi. ${selectedCTA}`;
+    caption = `${selectedBaseCaption} Penjelasan mengenai ${topicName} memberikan gambaran utuh tentang konteks aktual yang terjadi. ${indoCaptionCTAs[(index - 1) % indoCaptionCTAs.length]}`;
 
   } else if (isGB) {
     const gbHookPatterns = [
@@ -771,22 +756,13 @@ function generateRealtimeClipDataV2(niche, lang, index, extractedTopic, preset, 
   return clipResult;
 }
 
-function generateRealtimeClipData(niche, lang, index, extractedTopic, preset) {
-  return generateRealtimeClipDataV2(niche, lang, index, extractedTopic, preset);
-}
-
 function qualityControlCheck(data) {
   if (!data || !data.hook || !data.caption) return false;
-  
   const hookWords = data.hook.trim().split(/\s+/).length;
   const captionWords = data.caption.trim().split(/\s+/).length;
   const tagCount = (data.hashtags.match(/#/g) || []).length;
 
-  const isHookValid = hookWords >= 15 && hookWords <= 35;
-  const isCaptionValid = captionWords >= 40 && captionWords <= 120;
-  const isTagsValid = tagCount >= 3 && tagCount <= 8;
-
-  return isHookValid && isCaptionValid && isTagsValid;
+  return (hookWords >= 12 && hookWords <= 40) && (captionWords >= 30 && captionWords <= 130) && (tagCount >= 3 && tagCount <= 10);
 }
 
 // =============================================================
@@ -833,10 +809,27 @@ function buildClipsEngine(totalDuration, lang, niche, region, socialLink, atmVal
     if (clipDuration > sisaDurasi) clipDuration = Math.floor(sisaDurasi);
 
     const currentEnd = Math.floor(currentStart + clipDuration);
-    
     const realtimeData = generateRealtimeClipDataV2(niche, lang, clipIndex, extractedKeywords, preset, activeLink || atmVal);
 
-    addClipToArr(clips, clipIndex, currentStart, currentEnd, realtimeData, lang, region);
+    const rate = Math.floor(Math.random() * (99 - 85 + 1)) + 85;
+
+    clips.push({
+      id: clipIndex,
+      lang: lang,
+      region: region,
+      timestamp: `${formatTime(currentStart)} - ${formatTime(currentEnd)}`,
+      startSec: Math.floor(currentStart),
+      endSec: Math.floor(currentEnd),
+      hook: realtimeData.hook,
+      visual: realtimeData.visual,
+      rate: rate,
+      angle: realtimeData.angle,
+      caption: realtimeData.caption,
+      hashtags: realtimeData.hashtags,
+      category: realtimeData.category,
+      visualSuggestions: realtimeData.visualSuggestions,
+      source: realtimeData.source
+    });
 
     currentStart = currentEnd;
     clipIndex++;
@@ -845,42 +838,58 @@ function buildClipsEngine(totalDuration, lang, niche, region, socialLink, atmVal
   return clips;
 }
 
-function addClipToArr(clips, index, startSec, endSec, realtimeData, lang, region) {
-  const rate = Math.floor(Math.random() * (99 - 85 + 1)) + 85;
-
-  clips.push({
-    id: index,
-    lang: lang,
-    region: region,
-    timestamp: `${formatTime(startSec)} - ${formatTime(endSec)}`,
-    startSec: Math.floor(startSec),
-    endSec: Math.floor(endSec),
-    hook: realtimeData.hook,
-    visual: realtimeData.visual,
-    rate: rate,
-    angle: realtimeData.angle,
-    caption: realtimeData.caption,
-    hashtags: realtimeData.hashtags,
-    category: realtimeData.category,
-    visualSuggestions: realtimeData.visualSuggestions,
-    source: realtimeData.source
-  });
-}
-
-function formatTime(seconds) {
-  const totalSec = Math.floor(seconds);
-  const hrs = Math.floor(totalSec / 3600);
-  const mins = Math.floor((totalSec % 3600) / 60);
-  const secs = totalSec % 60;
-
-  if (hrs > 0) {
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+// =============================================================
+// HANDLER UTAMA GENERATE & ANALISIS VIDEO
+// =============================================================
+async function handleProcessVideo() {
+  if (isExporting) {
+    alert("Proses pemotongan/ekspor klip sedang berjalan, mohon tunggu...");
+    return;
   }
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+  let linkVal = socialLinkInput ? socialLinkInput.value.trim() : '';
+  
+  if (!loadedFile && !linkVal) {
+    linkVal = DEFAULT_YOUTUBE_LINK;
+    if (socialLinkInput) socialLinkInput.value = DEFAULT_YOUTUBE_LINK;
+  }
+
+  const platform = detectPlatform(linkVal);
+
+  if (!loadedFile && linkVal && platform === 'Unknown') {
+    alert("Tautan tidak valid! Harap masukkan URL yang valid dari YouTube, TikTok, atau Instagram.");
+    return;
+  }
+
+  if (!dbData) dbData = defaultBackupDB;
+
+  switchToView('result');
+  showStatus("Membaca metadata & menganalisis konteks video/link...");
+
+  let duration = 0;
+  if (loadedFile) {
+    duration = await getVideoDuration(loadedFile);
+  } else {
+    duration = 276; // Simulasi durasi video media sosial (4 Menit 36 Detik)
+    showStatus(`Mendeteksi metadata dari ${platform || 'YouTube'} Link...`);
+  }
+
+  const atmVal = atmInput ? atmInput.value : '';
+  const detectedTarget = await detectLanguageAndRegion(loadedFile, linkVal, atmVal);
+
+  showStatus(`Target Wilayah: ${detectedTarget.region.toUpperCase()} | Bahasa: ${detectedTarget.lang.toUpperCase()} | Durasi Total: ${formatTime(duration)} (${Math.round(duration)}s)`);
+
+  const nicheEl = document.getElementById('nicheSelect');
+  const niche = nicheEl ? nicheEl.value : 'gaming';
+
+  allGeneratedClips = buildClipsEngine(duration, detectedTarget.lang, niche, detectedTarget.region, linkVal, atmVal);
+  
+  currentPage = 1;
+  renderPage(currentPage);
 }
 
 // =============================================================
-// PAGINASI & RENDER CARD
+// RENDERING & PAGINASI UI KLIP
 // =============================================================
 function renderPage(page) {
   if (!resultsGrid) return;
@@ -1068,187 +1077,19 @@ function escapeQuotes(str) {
   return str ? str.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$') : '';
 }
 
-// Konfigurasi Endpoint Backend Render AI Agent
-const RENDER_BACKEND_URL = "https://ai-agent-project-3-h0jp.onrender.com";
-
 // =============================================================
-// KONFIGURASI BACKEND RENDER & ENGINE FFMPEG
+// MEDIA DOWNLOADER & FFMPEG.WASM ENGINE INTEGRATION
 // =============================================================
-const RENDER_BACKEND_URL = "https://ai-agent-project-3-h0jp.onrender.com";
-let ffmpegInstance = null;
-let isExporting = false;
-
-// Format Waktu Pendukung (MM:SS)
-function formatTime(seconds) {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s < 10 ? '0' : ''}${s}`;
-}
-
-// -------------------------------------------------------------
-// FUNGSI PEMBANTU: TRIGGER DOWNLOAD KE GALERI (ANDROID & IPHONE)
-// -------------------------------------------------------------
-async function triggerFileDownload(blob, filename) {
-  // Pilihan A: Menggunakan Web Share API (Sangat Bagus untuk iPhone/Safari agar langsung masuk Photos/Files)
-  if (navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: 'video/mp4' })] })) {
-    try {
-      const file = new File([blob], filename, { type: 'video/mp4' });
-      await navigator.share({
-        files: [file],
-        title: 'Hasil Klip Video',
-        text: 'Simpan video ini ke Galeri/Perangkat Anda'
-      });
-      return;
-    } catch (err) {
-      console.log('Share API dibatalkan atau tidak didukung, menggunakan fallback link download...', err);
-    }
-  }
-
-  // Pilihan B: Standard Blob Object URL Download (Android Chrome & Desktop)
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.style.display = 'none';
-  a.href = url;
-  a.download = filename;
-  
-  // Trik untuk Safari iOS
-  a.target = '_blank';
-  a.rel = 'noopener noreferrer';
-
-  document.body.appendChild(a);
-  a.click();
-
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 2000);
-}
-
-// =============================================================
-// KONFIGURASI BACKEND RENDER & ENGINE FFMPEG
-// =============================================================
-const RENDER_BACKEND_URL = "https://ai-agent-project-3-h0jp.onrender.com";
-let ffmpegInstance = null;
-let isExporting = false;
-let loadedFile = null; // Menyimpan file MP4 lokal jika di-upload
-
-// -------------------------------------------------------------
-// EVENT LISTENER: BACA FILE VIDEO LOKAL SAAT DI-UPLOAD
-// -------------------------------------------------------------
-document.addEventListener('DOMContentLoaded', () => {
-  // Hubungkan input file ke variabel loadedFile
-  const fileInput = document.getElementById('videoFileInput') || document.querySelector('input[type="file"]');
-  if (fileInput) {
-    fileInput.addEventListener('change', (e) => {
-      if (e.target.files && e.target.files[0]) {
-        loadedFile = e.target.files[0];
-        showStatus(`File lokal terpilih: ${loadedFile.name}`);
-      }
-    });
-  }
-
-  // Hubungkan tombol Generate ke fungsi generateClips
-  const btnGenerate = document.getElementById('btnGenerate') || document.querySelector('button[type="submit"]') || document.querySelector('.btn-generate');
-  if (btnGenerate) {
-    btnGenerate.addEventListener('click', (e) => {
-      e.preventDefault();
-      generateClips();
-    });
-  }
-});
-
-// Format Waktu Pendukung (MM:SS)
-function formatTime(seconds) {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s < 10 ? '0' : ''}${s}`;
-}
-
-// Menampilkan Status di UI
-function showStatus(msg) {
-  let statusBox = document.getElementById('statusBox');
-  if (!statusBox) {
-    statusBox = document.createElement('div');
-    statusBox.id = 'statusBox';
-    statusBox.style.cssText = "margin: 15px 0; padding: 12px; background: rgba(0,0,0,0.4); border-radius: 8px; color: #fff; font-size: 14px; text-align: center;";
-    const container = document.querySelector('.container') || document.body;
-    container.insertBefore(statusBox, container.firstChild);
-  }
-  statusBox.innerHTML = msg;
-}
-
-// -------------------------------------------------------------
-// FUNGSI UTAMA: GENERATE KLIP VIDEO
-// -------------------------------------------------------------
-async function generateClips() {
-  const ytUrlInput = document.getElementById('socialLinkInput')?.value.trim();
-
-  if (!loadedFile && !ytUrlInput) {
-    alert("Silakan upload file video lokal ATAU masukkan Link Sosial Media terlebih dahulu!");
-    return;
-  }
-
-  showStatus("⚡ Menganalisis konten & menyiapkan daftar klip...");
-
-  // Normalisasi URL YouTube (mengubah youtu.be menjadi format standar)
-  let cleanUrl = ytUrlInput;
-  if (cleanUrl && cleanUrl.includes('youtu.be/')) {
-    const videoId = cleanUrl.split('youtu.be/')[1]?.split('?')[0];
-    if (videoId) cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  }
-
-  // Simulasi/Response Hasil Pemotongan Timestamp Klip
-  // Jika backend Anda mengembalikan daftar timestamp, sesuaikan di sini
-  const dummyClips = [
-    { id: 1, start: 0, end: 30, title: "Klip Highlight #1 (00:00 - 00:30)" },
-    { id: 2, start: 30, end: 60, title: "Klip Highlight #2 (00:30 - 01:00)" }
-  ];
-
-  renderClipList(dummyClips);
-  showStatus("✅ Hasil klip berhasil dibuat! Klik tombol download pada klip yang diinginkan.");
-}
-
-// Render UI Daftar Klip
-function renderClipList(clips) {
-  let container = document.getElementById('clipResultsContainer');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'clipResultsContainer';
-    container.style.cssText = "margin-top: 20px;";
-    document.body.appendChild(container);
-  }
-
-  container.innerHTML = '<h3 style="color:#fff; text-align:center;">Daftar Klip Siap Ekspor:</h3>';
-
-  clips.forEach(clip => {
-    const card = document.createElement('div');
-    card.style.cssText = "background: #1e1e2d; margin: 10px 0; padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; color: #fff;";
-    card.innerHTML = `
-      <div>
-        <strong>${clip.title}</strong>
-        <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.8;">Durasi: ${clip.end - clip.start} Detik</p>
-      </div>
-      <button onclick="trimAndDownload(${clip.start}, ${clip.end}, ${clip.id})" style="background: #00d26a; border: none; padding: 10px 15px; border-radius: 6px; color: #fff; font-weight: bold; cursor: pointer;">
-        ⬇ Download MP4
-      </button>
-    `;
-    container.appendChild(card);
-  });
-}
-
-// -------------------------------------------------------------
-// TRIGGER DOWNLOAD KE GALERI (ANDROID & IPHONE)
-// -------------------------------------------------------------
 async function triggerFileDownload(blob, filename) {
   const file = new File([blob], filename, { type: 'video/mp4' });
 
-  // Web Share API untuk iPhone Safari & Chrome Android (Langsung Masuk Photos/Galeri)
+  // Web Share API (Dioptimalkan untuk Android & Safari iOS)
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({
         files: [file],
         title: 'Hasil Klip Video',
-        text: 'Simpan video ini ke Galeri/Perangkat Anda'
+        text: 'Simpan video ini ke Galeri Perangkat Anda'
       });
       return;
     } catch (err) {
@@ -1274,13 +1115,10 @@ async function triggerFileDownload(blob, filename) {
   }, 3000);
 }
 
-// =============================================================
-// INIT FFMPEG ENGINE (PEMOTONGAN FILE LOKAL)
-// =============================================================
 async function loadFFmpegEngine() {
   if (ffmpegInstance) return ffmpegInstance;
 
-  showStatus("Membuka engine FFmpeg.wasm dari CDN...");
+  showStatus("Membuka engine FFmpeg.wasm...");
 
   const FFmpegClass = window.FFmpegWASM?.FFmpeg || window.FFmpeg?.FFmpeg;
   const FFmpegUtils = window.FFmpegWASM?.FFmpegUtil || window.FFmpegUtil;
@@ -1313,7 +1151,7 @@ async function loadFFmpegEngine() {
 }
 
 // =============================================================
-// FUNGSI POTONG & EKSPOR VIDEO (BACKEND RENDER & LOKAL)
+// FUNGSI PEMOTONGAN & EKSPOR VIDEO UTAMA
 // =============================================================
 async function trimAndDownload(startSec, endSec, clipId) {
   if (isExporting) {
@@ -1328,72 +1166,66 @@ async function trimAndDownload(startSec, endSec, clipId) {
   }
 
   // -------------------------------------------------------------
-  // OPSI 1: JIKA LINK SOSMED (DIALIRKAN KE BACKEND RENDER)
+  // OPSI 1: JIKA LINK SOSMED (BACKEND RENDER SERVER)
   // -------------------------------------------------------------
   if (!loadedFile) {
-    let ytUrl = document.getElementById('socialLinkInput')?.value.trim();
+    let rawUrl = socialLinkInput ? socialLinkInput.value.trim() : '';
+    if (!rawUrl) rawUrl = DEFAULT_YOUTUBE_LINK;
+    const ytUrl = cleanSocialUrl(rawUrl);
 
-    if (ytUrl) {
-      if (ytUrl.includes('youtu.be/')) {
-        const videoId = ytUrl.split('youtu.be/')[1]?.split('?')[0];
-        if (videoId) ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    try {
+      isExporting = true;
+      showStatus(`[1/3] Menghubungi Server Backend Render untuk Klip #${clipId}...`);
+
+      const response = await fetch(`${RENDER_BACKEND_URL}/api/clip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: ytUrl,
+          start: startSec,
+          end: endSec,
+          duration: duration,
+          clipId: clipId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server Render Error (${response.status})`);
       }
 
-      try {
-        isExporting = true;
-        showStatus(`[1/2] Menghubungi Server Backend Render untuk Klip #${clipId}...`);
+      const resData = await response.json();
 
-        const response = await fetch(`${RENDER_BACKEND_URL}/api/clip`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: ytUrl,
-            start: startSec,
-            end: endSec,
-            duration: duration,
-            clipId: clipId
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error(`Server Render Error (${response.status})`);
+      if (resData.downloadUrl) {
+        showStatus(`[2/3] Mengunduh Klip #${clipId} dari Backend...`);
+        
+        try {
+          const fileResp = await fetch(resData.downloadUrl);
+          if (!fileResp.ok) throw new Error("CORS / Network Blocked");
+          const videoBlob = await fileResp.blob();
+          
+          showStatus(`[3/3] Menyimpan Klip #${clipId} ke Galeri...`);
+          await triggerFileDownload(videoBlob, `Clip_${clipId}_${startSec}s-${endSec}s.mp4`);
+        } catch (e) {
+          window.open(resData.downloadUrl, '_blank');
         }
 
-        const resData = await response.json();
-
-        if (resData.downloadUrl) {
-          showStatus(`[2/2] Mengunduh Klip dari Backend Server...`);
-          
-          try {
-            const fileResp = await fetch(resData.downloadUrl);
-            if (!fileResp.ok) throw new Error("CORS / Network Blocked");
-            const videoBlob = await fileResp.blob();
-            await triggerFileDownload(videoBlob, `Clip_${clipId}_${startSec}s-${endSec}s.mp4`);
-          } catch (e) {
-            window.open(resData.downloadUrl, '_blank');
-          }
-          
-          showStatus(`Klip #${clipId} berhasil diunduh!`);
-        } else {
-          throw new Error("Respon server tidak memberikan URL video.");
-        }
-
-      } catch (err) {
-        console.error("Render Backend Error:", err);
-        alert(`Gagal memproses via Server Render: ${err.message}\nSilakan gunakan opsi Upload File Video Lokal.`);
-        showStatus("Proses ke Server Render gagal.");
-      } finally {
-        isExporting = false;
+        showStatus(`Klip #${clipId} berhasil diproses!`);
+      } else {
+        throw new Error("Respon server tidak memberikan URL video.");
       }
-      return;
-    } else {
-      alert("Silakan upload file video (MP4) atau masukkan Link Sosial Media!");
-      return;
+
+    } catch (err) {
+      console.error("Render Backend Error:", err);
+      alert(`Gagal memproses via Server Render: ${err.message}\nSilakan gunakan opsi Upload File Video Lokal.`);
+      showStatus("Proses ke Server Render gagal.");
+    } finally {
+      isExporting = false;
     }
+    return;
   }
 
   // -------------------------------------------------------------
-  // OPSI 2: JIKA FILE LOKAL (PEMOTONGAN VIA FFMPEG.WASM)
+  // OPSI 2: JIKA FILE LOKAL (FFMPEG.WASM IN-BROWSER)
   // -------------------------------------------------------------
   const outputFilename = `Clip_${clipId}_${startSec}s-${endSec}s.mp4`;
 
@@ -1408,7 +1240,7 @@ async function trimAndDownload(startSec, endSec, clipId) {
       throw new Error("FFmpegUtil.fetchFile tidak ditemukan.");
     }
 
-    showStatus(`[2/3] Memotong & Memproses Video (${formatTime(startSec)} - ${formatTime(endSec)})...`);
+    showStatus(`[2/3] Memotong Video (${formatTime(startSec)} - ${formatTime(endSec)})...`);
 
     const inputName = 'input_original.mp4';
     const outputName = 'output_clipped.mp4';
@@ -1429,7 +1261,7 @@ async function trimAndDownload(startSec, endSec, clipId) {
       outputName
     ]);
 
-    showStatus(`[3/3] Finalisasi simpan ke Perangkat/Galeri...`);
+    showStatus(`[3/3] Finalisasi simpan Klip #${clipId} ke Perangkat...`);
 
     const data = await ffmpeg.readFile(outputName);
     const mp4Blob = new Blob([data.buffer], { type: 'video/mp4' });
@@ -1438,7 +1270,6 @@ async function trimAndDownload(startSec, endSec, clipId) {
     await ffmpeg.deleteFile(outputName).catch(() => {});
 
     await triggerFileDownload(mp4Blob, outputFilename);
-
     showStatus(`Klip #${clipId} berhasil diekspor!`);
   } catch (err) {
     console.error("FFmpeg Export Error:", err);
