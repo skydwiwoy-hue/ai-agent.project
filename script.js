@@ -1068,19 +1068,24 @@ function escapeQuotes(str) {
   return str ? str.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$') : '';
 }
 
+// Konfigurasi Endpoint Backend Render AI Agent
+const RENDER_BACKEND_URL = "https://ai-agent-project-3-h0jp.onrender.com";
+
 // =============================================================
-// INIT FFMPEG ENGINE & EXPORT PROCESSOR (OPTIMIZED FOR IOS & ANDROID)
+// INIT FFMPEG ENGINE (SINGLETON WITH CDN FALLBACK FOR GITHUB PAGES)
 // =============================================================
 async function loadFFmpegEngine() {
   if (ffmpegInstance) return ffmpegInstance;
 
-  if (typeof FFmpegWASM === 'undefined' && typeof window.FFmpeg === 'undefined') {
-    throw new Error("Library FFmpeg.wasm belum dimuat di HTML.");
+  showStatus("Membuka engine FFmpeg.wasm dari CDN...");
+
+  const FFmpegClass = window.FFmpegWASM?.FFmpeg || window.FFmpeg?.FFmpeg;
+  const FFmpegUtils = window.FFmpegWASM?.FFmpegUtil || window.FFmpegUtil;
+
+  if (!FFmpegClass) {
+    throw new Error("Library FFmpeg.wasm gagal dimuat. Pastikan koneksi internet terhubung.");
   }
 
-  showStatus("Membuka engine FFmpeg.wasm...");
-
-  const FFmpegClass = (window.FFmpegWASM && window.FFmpegWASM.FFmpeg) || window.FFmpeg.FFmpeg || window.FFmpeg;
   ffmpegInstance = new FFmpegClass();
 
   ffmpegInstance.on('log', ({ message }) => console.log('[FFmpeg Log]:', message));
@@ -1089,21 +1094,23 @@ async function loadFFmpegEngine() {
     showStatus(`Memproses Ekspor MP4... ${percent}%`);
   });
 
-  const baseURL = './ffmpeg';
-  const { toBlobURL } = window.FFmpegUtil || {};
+  const coreURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js';
+  const wasmURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm';
 
-  if (!toBlobURL) throw new Error("FFmpegUtil tidak ditemukan.");
-
-  await ffmpegInstance.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm')
-  });
+  if (FFmpegUtils && FFmpegUtils.toBlobURL) {
+    await ffmpegInstance.load({
+      coreURL: await FFmpegUtils.toBlobURL(coreURL, 'text/javascript'),
+      wasmURL: await FFmpegUtils.toBlobURL(wasmURL, 'application/wasm')
+    });
+  } else {
+    await ffmpegInstance.load({ coreURL, wasmURL });
+  }
 
   return ffmpegInstance;
 }
 
 // =============================================================
-// FUNGSI POTONG & DOWNLOAD KLIP (ANTI-CORS & FLUID FLOW)
+// FUNGSI POTONG & DOWNLOAD KLIP (INTEGRASI AI AGENT RENDER)
 // =============================================================
 async function trimAndDownload(startSec, endSec, clipId) {
   if (isExporting) {
@@ -1117,33 +1124,84 @@ async function trimAndDownload(startSec, endSec, clipId) {
     return;
   }
 
-  // --- OPSI 1: JIKA MENGGUNAKAN LINK YOUTUBE ---
+  // -------------------------------------------------------------
+  // OPSI 1: PROSES LINK SOSMED VIA BACKEND RENDER (AI AGENT API)
+  // -------------------------------------------------------------
   if (!loadedFile) {
-    const ytUrl = document.getElementById('socialLinkInput')?.value.trim();
+    const socialUrl = document.getElementById('socialLinkInput')?.value.trim();
 
-    if (ytUrl) {
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(ytUrl);
+    if (socialUrl) {
+      try {
+        isExporting = true;
+        showStatus(`[1/2] Menghubungi Server AI Agent Render untuk Klip #${clipId}...`);
+
+        const response = await fetch(`${RENDER_BACKEND_URL}/api/clip`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            url: socialUrl,
+            start: startSec,
+            end: endSec,
+            duration: duration,
+            clipId: clipId
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server AI Agent merespons status (${response.status})`);
+        }
+
+        const data = await response.json();
+
+        showStatus(`[2/2] Mengunduh Klip dari AI Agent Server...`);
+
+        // Jika API mengembalikan URL file langsung
+        if (data.downloadUrl) {
+          const a = document.createElement('a');
+          a.href = data.downloadUrl;
+          a.download = `Clip_${clipId}_${startSec}s-${endSec}s.mp4`;
+          a.target = '_blank';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          showStatus(`Klip #${clipId} berhasil diunduh dari server!`);
+        } else if (data.status === 'processing') {
+          alert("Permintaan pemotongan klip sedang diproses oleh AI Agent Server.");
+        } else {
+          throw new Error("Respon API tidak memiliki URL unduhan yang valid.");
+        }
+
+      } catch (err) {
+        console.error("AI Agent Render Request Error:", err);
+        alert(`Gagal memproses link di Server Render: ${err.message}\nSilakan gunakan opsi Upload File Video Lokal.`);
+        showStatus("Gagal terhubung ke AI Agent Render.");
+      } finally {
+        isExporting = false;
       }
-      showStatus(`Link tersalin! Membuka Cobalt untuk Klip #${clipId} (${formatTime(startSec)} - ${formatTime(endSec)})...`);
-      const cobaltUrl = `https://cobalt.tools/?u=${encodeURIComponent(ytUrl)}`;
-      window.open(cobaltUrl, '_blank');
       return;
     } else {
-      alert("Silakan upload file video atau masukkan link YouTube terlebih dahulu!");
+      alert("Silakan masukkan Link Video atau Unggah File Video (MP4) terlebih dahulu!");
       return;
     }
   }
 
-  // --- OPSI 2: JIKA MENGGUNAKAN FILE LOKAL (FFMPEG.WASM) ---
+  // -------------------------------------------------------------
+  // OPSI 2: PROSES FILE LOKAL DENGAN FFMPEG.WASM (IN-BROWSER)
+  // -------------------------------------------------------------
   const outputFilename = `Clip_${clipId}_${startSec}s-${endSec}s.mp4`;
 
   try {
     isExporting = true;
-    showStatus(`[1/3] Menyiapkan Engine FFmpeg untuk Klip #${clipId}...`);
+    showStatus(`[1/3] Menyiapkan Engine FFmpeg Lokal untuk Klip #${clipId}...`);
 
     const ffmpeg = await loadFFmpegEngine();
-    const { fetchFile } = window.FFmpegUtil;
+    const fetchFile = window.FFmpegWASM?.FFmpegUtil?.fetchFile || window.FFmpegUtil?.fetchFile;
+
+    if (!fetchFile) {
+      throw new Error("FFmpegUtil.fetchFile tidak ditemukan.");
+    }
 
     showStatus(`[2/3] Memotong & Memproses Video (${formatTime(startSec)} - ${formatTime(endSec)})...`);
 
@@ -1152,23 +1210,16 @@ async function trimAndDownload(startSec, endSec, clipId) {
 
     await ffmpeg.writeFile(inputName, await fetchFile(loadedFile));
 
-    // Exec Parameter FFmpeg Optimasi Penuh (Android & iOS Support)
     await ffmpeg.exec([
       '-ss', `${startSec}`,
       '-i', inputName,
       '-t', `${duration}`,
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      '-crf', '23',
-      '-profile:v', 'main',
-      '-level', '4.0',
+      '-crf', '26',
       '-pix_fmt', 'yuv420p',
-      '-r', '30',
-      '-g', '60',
-      '-keyint_min', '30',
       '-c:a', 'aac',
       '-b:a', '128k',
-      '-ar', '44100',
       '-movflags', '+faststart',
       outputName
     ]);
@@ -1187,51 +1238,8 @@ async function trimAndDownload(startSec, endSec, clipId) {
   } catch (err) {
     console.error("FFmpeg Export Error:", err);
     alert(`Export gagal: ${err.message || 'Terjadi kesalahan saat memotong video'}`);
-    showStatus("Export gagal. Silakan coba lagi.");
+    showStatus("Export gagal. Pastikan file video lokal valid dan unggah file secara langsung.");
   } finally {
     isExporting = false;
   }
-}
-
-// =============================================================
-// FUNGSI TRIGGER DOWNLOAD & WEB SHARE (UNIVERSAL ANDROID & IOS)
-// =============================================================
-async function triggerFileDownload(blob, filename, clipId) {
-  const file = new File([blob], filename, { type: 'video/mp4' });
-
-  // 1. Opsi Utama: Web Share API (Langsung simpan ke Galeri/Photos di iOS & Android)
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({
-        files: [file],
-        title: filename,
-        text: `Hasil Klip AI #${clipId}`
-      });
-      return;
-    } catch (shareErr) {
-      if (shareErr.name === 'AbortError') return; // Dibatalkan pengguna
-      console.warn("Web Share gagal, beralih ke metode fallback...", shareErr);
-    }
-  }
-
-  // 2. Opsi Fallback: Direct Download via Tag <a>
-  const downloadUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = downloadUrl;
-  a.download = filename;
-  a.style.display = 'none';
-
-  document.body.appendChild(a);
-  a.click();
-
-  // Pengingat khusus iOS jika file tersimpan ke aplikasi 'Files'
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  if (isIOS) {
-    alert("Video telah diunduh! Jika tidak langsung masuk ke Galeri Photos, buka aplikasi 'Files' / 'Berkas', pilih video tersebut lalu klik ikon Share -> 'Save Video'.");
-  }
-
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(downloadUrl);
-  }, 4000);
 }
