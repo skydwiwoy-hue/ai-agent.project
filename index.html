@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ai-agent-project</title>
+  <title>AI Clipper Generator Pro</title>
 
-  <!-- 1. SCRIPT FFMPEG LOKAL (SESUAI STRUKTUR FOLDER FFMPEG/) -->
-  <script src="ffmpeg/ffmpeg.js"></script>
-  <script src="ffmpeg/util.js"></script>
+  <!-- 1. SCRIPT FFMPEG & UTIL RESMI DARI CDN (STABIL UNTUK GITHUB PAGES) -->
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 
   <!-- 2. STYLESHEET & FONTS -->
   <link rel="stylesheet" href="style.css">
@@ -19,8 +19,8 @@
 
   <div class="container">
     <header class="app-header">
-      <div class="badge">v3.0 AI Engine</div>
-      <h1>🤖 ai-agent-project</h1>
+      <div class="badge">v3.1 AI Engine</div>
+      <h1>🤖 AI Clipper Generator Pro</h1>
       <p class="subtitle">Ubah video durasi panjang menjadi klip viral secara otomatis</p>
     </header>
 
@@ -29,7 +29,7 @@
       <div class="form-group">
         <label for="videoInput" class="dropzone">
           <div class="dropzone-icon">📁</div>
-          <span class="dropzone-title">Upload Video Utama</span>
+          <span class="dropzone-title">Upload Video Utama (Rekomendasi File Lokal)</span>
           <p id="dropzoneText">Klik atau seret file video ke area ini</p>
           <input type="file" id="videoInput" accept="video/*">
         </label>
@@ -88,7 +88,7 @@
       <div id="statusBox" class="status-box">Menganalisis metadata dan konteks video...</div>
 
       <div id="resultsGrid" class="results-grid"></div>
-      
+
       <!-- Kontainer Paginasi Halaman -->
       <div id="paginationControls" class="pagination-container"></div>
     </div>
