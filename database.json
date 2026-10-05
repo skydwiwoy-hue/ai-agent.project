@@ -1,0 +1,110 @@
+{
+  "version": "3.1.0",
+
+  "app": {
+    "name": "AI Clipper Generator Pro",
+    "description": "Context-aware AI short-form video content generator.",
+    "mode": "context-aware",
+    "realtimeGeneration": true
+  },
+
+  "language": {
+    "default": "id-ID",
+    "available": ["id-ID", "en-US", "en-GB"],
+    "autoDetect": true,
+    "userCanSelect": true
+  },
+
+  "languageProfiles": {
+    "id-ID": {
+      "name": "Bahasa Indonesia",
+      "nativeName": "Indonesia",
+      "spelling": "Indonesian",
+      "tone": "natural, engaging, conversational",
+      "style": "social-media-native",
+      "audience": "Indonesia"
+    },
+    "en-US": {
+      "name": "US English",
+      "nativeName": "English (US)",
+      "spelling": "American English",
+      "tone": "natural, modern, conversational",
+      "style": "social-media-native",
+      "audience": "United States"
+    }
+  },
+
+  "generation": {
+    "inputAnalysis": {
+      "analyzeVideo": true,
+      "analyzeTranscript": true,
+      "analyzeAudio": true,
+      "detectKeyMoment": true,
+      "detectEmotion": true
+    },
+
+    "hookRules": {
+      "enabled": true,
+      "wordCount": { "min": 10, "max": 25 },
+      "style": "viral-natural",
+      "emoji": { "enabled": true, "max": 2 },
+      "noClickbait": true,
+      "mustMatchContext": true
+    },
+
+    "captionRules": {
+      "enabled": true,
+      "wordCount": { "min": 40, "max": 90 },
+      "includeCTA": true,
+      "includeHashtags": false
+    },
+
+    "hashtagRules": {
+      "enabled": true,
+      "count": { "min": 4, "max": 8 },
+      "avoidGenericSpam": true
+    }
+  },
+
+  "templates": {
+    "gaming": {
+      "categories": ["clutch", "ace", "funny moment", "epic fail", "strategy", "comeback", "1v1"],
+      "angles": ["Insane Clutch", "Unexpected Play", "Funny Reaction", "Pro Gameplay", "1v1 Moment"],
+      "visuals": [
+        "Slow down key moment right before elimination.",
+        "Zoom into player reaction camera.",
+        "Highlight HUD or killfeed element."
+      ]
+    },
+    "finance": {
+      "categories": ["investing", "saving", "passive income", "money mistakes", "business"],
+      "angles": ["Investment Insight", "Money Mistake", "Wealth Growth", "Business Strategy"],
+      "visuals": [
+        "Highlight important numbers on screen.",
+        "Zoom into relevant chart or data point."
+      ]
+    },
+    "podcast": {
+      "categories": ["life advice", "mindset", "controversial opinion", "storytelling"],
+      "angles": ["Deep Lesson", "Mindset Shift", "Unexpected Opinion", "Personal Story"],
+      "visuals": [
+        "Zoom into speaker during high-emotion quote.",
+        "Add clean text overlays for key sentences."
+      ]
+    }
+  },
+
+  "prompts": {
+    "hook": {
+      "system": "Buat 1 hook viral berbasis konteks video. Dilarang membuat hoaks atau klaim berlebihan.",
+      "instruction": "Tulis hook singkat 10-25 kata yang menarik perhatian penonton di 3 detik pertama."
+    },
+    "caption": {
+      "system": "Buat deskripsi konten media sosial yang alami dan informatif.",
+      "instruction": "Tulis deskripsi 40-90 kata beserta Call To Action (CTA) di akhir kalimat."
+    },
+    "hashtags": {
+      "instruction": "Hasilkan 4-8 hashtag relevan yang paling dicari berdasarkan niche video."
+    }
+  }
+}
