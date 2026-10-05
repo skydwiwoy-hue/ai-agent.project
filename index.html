@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Clipper Generator Pro</title>
+  <title>AI-AGENT-PROJECTS</title>
 
-  <!-- 1. SCRIPT FFMPEG & UTIL RESMI DARI CDN (STABIL UNTUK GITHUB PAGES) -->
+  <!-- 1. SCRIPT FFMPEG & UTIL RESMI DARI CDN -->
   <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
   <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 
@@ -20,18 +20,17 @@
   <div class="container">
     <header class="app-header">
       <div class="badge">v3.1 AI Engine</div>
-      <h1>🤖 AI Clipper Generator Pro</h1>
-      <p class="subtitle">Ubah video durasi panjang menjadi klip viral secara otomatis</p>
+      <h1>🤖 AI-AGENT-PROJECTS</h1>
     </header>
 
     <!-- STEP 1: FORM UPLOAD & INPUT -->
     <div id="uploadStep" class="step-card active">
       <div class="form-group">
-        <label for="videoInput" class="dropzone">
+        <label for="videoFileInput" class="dropzone">
           <div class="dropzone-icon">📁</div>
           <span class="dropzone-title">Upload Video Utama (Rekomendasi File Lokal)</span>
           <p id="dropzoneText">Klik atau seret file video ke area ini</p>
-          <input type="file" id="videoInput" accept="video/*">
+          <input type="file" id="videoFileInput" accept="video/*">
         </label>
       </div>
 
@@ -74,7 +73,7 @@
         </div>
       </div>
 
-      <button id="processBtn" class="btn-primary">
+      <button id="btnGenerate" class="btn-primary">
         <span>✨ Generate & Proses Klip Sekarang</span>
       </button>
     </div>
@@ -82,7 +81,7 @@
     <!-- STEP 2: HASIL RESULT KLIP -->
     <div id="resultStep" class="step-card hidden">
       <div class="result-header">
-        <button id="backBtn" class="btn-secondary">⬅ Unggah Video Lain</button>
+        <button id="backBtn" class="btn-secondary" onclick="location.reload()">⬅ Unggah Video Lain</button>
       </div>
 
       <div id="statusBox" class="status-box">Menganalisis metadata dan konteks video...</div>
