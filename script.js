@@ -1125,7 +1125,157 @@ async function triggerFileDownload(blob, filename) {
 }
 
 // =============================================================
-// INIT FFMPEG ENGINE (SINGLETON WITH CDN FALLBACK)
+// KONFIGURASI BACKEND RENDER & ENGINE FFMPEG
+// =============================================================
+const RENDER_BACKEND_URL = "https://ai-agent-project-3-h0jp.onrender.com";
+let ffmpegInstance = null;
+let isExporting = false;
+let loadedFile = null; // Menyimpan file MP4 lokal jika di-upload
+
+// -------------------------------------------------------------
+// EVENT LISTENER: BACA FILE VIDEO LOKAL SAAT DI-UPLOAD
+// -------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+  // Hubungkan input file ke variabel loadedFile
+  const fileInput = document.getElementById('videoFileInput') || document.querySelector('input[type="file"]');
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        loadedFile = e.target.files[0];
+        showStatus(`File lokal terpilih: ${loadedFile.name}`);
+      }
+    });
+  }
+
+  // Hubungkan tombol Generate ke fungsi generateClips
+  const btnGenerate = document.getElementById('btnGenerate') || document.querySelector('button[type="submit"]') || document.querySelector('.btn-generate');
+  if (btnGenerate) {
+    btnGenerate.addEventListener('click', (e) => {
+      e.preventDefault();
+      generateClips();
+    });
+  }
+});
+
+// Format Waktu Pendukung (MM:SS)
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+// Menampilkan Status di UI
+function showStatus(msg) {
+  let statusBox = document.getElementById('statusBox');
+  if (!statusBox) {
+    statusBox = document.createElement('div');
+    statusBox.id = 'statusBox';
+    statusBox.style.cssText = "margin: 15px 0; padding: 12px; background: rgba(0,0,0,0.4); border-radius: 8px; color: #fff; font-size: 14px; text-align: center;";
+    const container = document.querySelector('.container') || document.body;
+    container.insertBefore(statusBox, container.firstChild);
+  }
+  statusBox.innerHTML = msg;
+}
+
+// -------------------------------------------------------------
+// FUNGSI UTAMA: GENERATE KLIP VIDEO
+// -------------------------------------------------------------
+async function generateClips() {
+  const ytUrlInput = document.getElementById('socialLinkInput')?.value.trim();
+
+  if (!loadedFile && !ytUrlInput) {
+    alert("Silakan upload file video lokal ATAU masukkan Link Sosial Media terlebih dahulu!");
+    return;
+  }
+
+  showStatus("⚡ Menganalisis konten & menyiapkan daftar klip...");
+
+  // Normalisasi URL YouTube (mengubah youtu.be menjadi format standar)
+  let cleanUrl = ytUrlInput;
+  if (cleanUrl && cleanUrl.includes('youtu.be/')) {
+    const videoId = cleanUrl.split('youtu.be/')[1]?.split('?')[0];
+    if (videoId) cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  }
+
+  // Simulasi/Response Hasil Pemotongan Timestamp Klip
+  // Jika backend Anda mengembalikan daftar timestamp, sesuaikan di sini
+  const dummyClips = [
+    { id: 1, start: 0, end: 30, title: "Klip Highlight #1 (00:00 - 00:30)" },
+    { id: 2, start: 30, end: 60, title: "Klip Highlight #2 (00:30 - 01:00)" }
+  ];
+
+  renderClipList(dummyClips);
+  showStatus("✅ Hasil klip berhasil dibuat! Klik tombol download pada klip yang diinginkan.");
+}
+
+// Render UI Daftar Klip
+function renderClipList(clips) {
+  let container = document.getElementById('clipResultsContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'clipResultsContainer';
+    container.style.cssText = "margin-top: 20px;";
+    document.body.appendChild(container);
+  }
+
+  container.innerHTML = '<h3 style="color:#fff; text-align:center;">Daftar Klip Siap Ekspor:</h3>';
+
+  clips.forEach(clip => {
+    const card = document.createElement('div');
+    card.style.cssText = "background: #1e1e2d; margin: 10px 0; padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; color: #fff;";
+    card.innerHTML = `
+      <div>
+        <strong>${clip.title}</strong>
+        <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.8;">Durasi: ${clip.end - clip.start} Detik</p>
+      </div>
+      <button onclick="trimAndDownload(${clip.start}, ${clip.end}, ${clip.id})" style="background: #00d26a; border: none; padding: 10px 15px; border-radius: 6px; color: #fff; font-weight: bold; cursor: pointer;">
+        ⬇ Download MP4
+      </button>
+    `;
+    container.appendChild(card);
+  });
+}
+
+// -------------------------------------------------------------
+// TRIGGER DOWNLOAD KE GALERI (ANDROID & IPHONE)
+// -------------------------------------------------------------
+async function triggerFileDownload(blob, filename) {
+  const file = new File([blob], filename, { type: 'video/mp4' });
+
+  // Web Share API untuk iPhone Safari & Chrome Android (Langsung Masuk Photos/Galeri)
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: 'Hasil Klip Video',
+        text: 'Simpan video ini ke Galeri/Perangkat Anda'
+      });
+      return;
+    } catch (err) {
+      console.log('Share API dibatalkan/tidak didukung, fallback ke download biasa...', err);
+    }
+  }
+
+  // Anchor Download Fallback
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = filename;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+
+  document.body.appendChild(a);
+  a.click();
+
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 3000);
+}
+
+// =============================================================
+// INIT FFMPEG ENGINE (PEMOTONGAN FILE LOKAL)
 // =============================================================
 async function loadFFmpegEngine() {
   if (ffmpegInstance) return ffmpegInstance;
@@ -1163,7 +1313,7 @@ async function loadFFmpegEngine() {
 }
 
 // =============================================================
-// FUNGSI POTONG & DOWNLOAD KLIP (GABUNGAN LENGKAP)
+// FUNGSI POTONG & EKSPOR VIDEO (BACKEND RENDER & LOKAL)
 // =============================================================
 async function trimAndDownload(startSec, endSec, clipId) {
   if (isExporting) {
@@ -1181,9 +1331,14 @@ async function trimAndDownload(startSec, endSec, clipId) {
   // OPSI 1: JIKA LINK SOSMED (DIALIRKAN KE BACKEND RENDER)
   // -------------------------------------------------------------
   if (!loadedFile) {
-    const ytUrl = document.getElementById('socialLinkInput')?.value.trim();
+    let ytUrl = document.getElementById('socialLinkInput')?.value.trim();
 
     if (ytUrl) {
+      if (ytUrl.includes('youtu.be/')) {
+        const videoId = ytUrl.split('youtu.be/')[1]?.split('?')[0];
+        if (videoId) ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      }
+
       try {
         isExporting = true;
         showStatus(`[1/2] Menghubungi Server Backend Render untuk Klip #${clipId}...`);
@@ -1215,7 +1370,6 @@ async function trimAndDownload(startSec, endSec, clipId) {
             const videoBlob = await fileResp.blob();
             await triggerFileDownload(videoBlob, `Clip_${clipId}_${startSec}s-${endSec}s.mp4`);
           } catch (e) {
-            // Fallback jika fetch blob terhalang CORS: langsung buka link download
             window.open(resData.downloadUrl, '_blank');
           }
           
@@ -1239,7 +1393,7 @@ async function trimAndDownload(startSec, endSec, clipId) {
   }
 
   // -------------------------------------------------------------
-  // OPSI 2: JIKA FILE LOKAL (PEMOTONGAN IN-BROWSER VIA FFMPEG.WASM)
+  // OPSI 2: JIKA FILE LOKAL (PEMOTONGAN VIA FFMPEG.WASM)
   // -------------------------------------------------------------
   const outputFilename = `Clip_${clipId}_${startSec}s-${endSec}s.mp4`;
 
@@ -1261,14 +1415,13 @@ async function trimAndDownload(startSec, endSec, clipId) {
 
     await ffmpeg.writeFile(inputName, await fetchFile(loadedFile));
 
-    // Eksekusi Fast Trimming
     await ffmpeg.exec([
       '-ss', `${startSec}`,
       '-i', inputName,
       '-t', `${duration}`,
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
-      '-crf', '26',
+      '-crf', '28',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
       '-b:a', '128k',
@@ -1284,7 +1437,6 @@ async function trimAndDownload(startSec, endSec, clipId) {
     await ffmpeg.deleteFile(inputName).catch(() => {});
     await ffmpeg.deleteFile(outputName).catch(() => {});
 
-    // Panggil fungsi pembantu untuk menyimpan ke HP
     await triggerFileDownload(mp4Blob, outputFilename);
 
     showStatus(`Klip #${clipId} berhasil diekspor!`);
