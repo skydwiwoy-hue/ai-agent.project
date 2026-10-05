@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI-AGENT-PROJECTS</title>
+
+  <!-- 1. SCRIPT FFMPEG & UTIL RESMI DARI CDN -->
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+
+  <!-- 2. STYLESHEET & FONTS -->
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <div class="container">
+    <header class="app-header">
+      <div class="badge">v3.1 AI Engine</div>
+      <h1>🤖 AI-AGENT-PROJECTS</h1>
+    </header>
+
+    <!-- STEP 1: FORM UPLOAD & INPUT -->
+    <div id="uploadStep" class="step-card active">
+      <div class="form-group">
+        <label for="videoFileInput" class="dropzone">
+          <div class="dropzone-icon">📁</div>
+          <span class="dropzone-title">Upload Video Utama (Rekomendasi File Lokal)</span>
+          <p id="dropzoneText">Klik atau seret file video ke area ini</p>
+          <input type="file" id="videoFileInput" accept="video/*">
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label for="socialLinkInput">🔗 Link Sumber Konten (YouTube / TikTok / IG)</label>
+        <input type="text" id="socialLinkInput" placeholder="https://www.youtube.com/watch?v=...">
+      </div>
+
+      <div class="form-group">
+        <label for="atmInput">💡 Link Referensi ATM (Amati, Tiru, Modifikasi)</label>
+        <input type="text" id="atmInput" placeholder="https://www.tiktok.com/@user/video/...">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group half">
+          <label for="forceLang">🌐 Bahasa Output</label>
+          <div class="select-wrapper">
+            <select id="forceLang">
+              <option value="auto">⚡ Deteksi Otomatis</option>
+              <option value="id">Bahasa Indonesia (ID)</option>
+              <option value="en">English (US/CA)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group half">
+          <label for="nicheSelect">🔥 Kategori / Niche Konten</label>
+          <div class="select-wrapper">
+            <select id="nicheSelect">
+              <option value="finance">Finance & Investment</option>
+              <option value="politik">Politik & Isu Publik</option>
+              <option value="podcast">Podcast & In-Depth Conversation</option>
+              <option value="gaming" selected>Gaming & Esports Highlights</option>
+              <option value="education">Education & Tutorials</option>
+              <option value="music">Music & Performance</option>
+              <option value="film">Film & Cinema Clips</option>
+              <option value="news">News & Breaking Updates</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <button id="btnGenerate" class="btn-primary">
+        <span>✨ Generate & Proses Klip Sekarang</span>
+      </button>
+    </div>
+
+    <!-- STEP 2: HASIL RESULT KLIP -->
+    <div id="resultStep" class="step-card hidden">
+      <div class="result-header">
+        <button id="backBtn" class="btn-secondary" onclick="location.reload()">⬅ Unggah Video Lain</button>
+      </div>
+
+      <div id="statusBox" class="status-box">Menganalisis metadata dan konteks video...</div>
+
+      <div id="resultsGrid" class="results-grid"></div>
+
+      <!-- Kontainer Paginasi Halaman -->
+      <div id="paginationControls" class="pagination-container"></div>
+    </div>
+
+  </div>
+
+  <video id="hiddenVideo" style="display:none;"></video>
+
+  <!-- 3. MAIN SCRIPT -->
+  <script src="script.js"></script>
+</body>
+</html>
